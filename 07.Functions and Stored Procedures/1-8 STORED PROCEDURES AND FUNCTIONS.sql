@@ -1,0 +1,170 @@
+GO
+USE [SoftUni]
+GO
+
+--PROBLEM 1
+----CREATING A STORED PROCEDURE
+CREATE PROCEDURE [usp_GetEmployeesSalaryAbove35000]
+AS
+BEGIN
+	SELECT [FirstName], [LastName]
+	FROM [Employees]
+	WHERE [Salary] > 35000
+END
+
+
+GO
+--PROBLEM 2 CREATING A STORED PROCEDURE THAT ACCEPTS AN ARGUMENT
+CREATE PROCEDURE [usp_GetEmployeesSalaryAboveNumber] @MaxSalaryArg DECIMAL(18, 4)
+AS
+BEGIN
+	SELECT [FirstName], [LastName]
+	FROM [Employees]
+	WHERE [Salary] >= @MaxSalaryArg
+END
+
+EXEC [usp_GetEmployeesSalaryAboveNumber] 48100
+
+
+GO
+--PROBLEM 3
+CREATE OR ALTER PROCEDURE [usp_GetTownsStartingWith] @StringInput VARCHAR(20)
+AS
+BEGIN
+	SELECT [Name]
+	FROM [Towns]
+	WHERE [Name] LIKE LOWER(CONCAT(@StringInput, '%%'))
+END
+
+EXEC [usp_GetTownsStartingWith] 'b'
+
+GO
+--PROBLEM 4 STORED PROCEDURE WITH JOINS
+CREATE OR ALTER PROCEDURE [usp_GetEmployeesFromTown] @TownNameInput VARCHAR(50)
+AS
+BEGIN
+	SELECT [FirstName], [LastName]
+	FROM [Employees] AS e
+	JOIN [Addresses] AS a
+	ON e.[AddressID] = a.[AddressID]
+	JOIN [Towns] AS t
+	ON t.[TownID] = a.[TownID]
+	WHERE t.[Name] = @TownNameInput
+END
+
+EXEC [usp_GetEmployeesFromTown] 'Sofia'
+
+GO
+--PROBLEM 5 CREATING A FUNCTION WITH IF-ELSE STATEMENTS
+CREATE OR ALTER FUNCTION [ufn_GetSalaryLevel] (@salary DECIMAL(18,4))
+RETURNS VARCHAR(8)
+AS
+BEGIN
+	DECLARE @result VARCHAR(8)
+		IF @salary < 30000
+		BEGIN
+			SET @result = 'Low'
+		END
+		ELSE IF @salary BETWEEN 30000 AND 50000
+		BEGIN
+			SET @result = 'Average'
+		END
+		ELSE IF @salary > 50000
+		BEGIN
+			SET @result = 'High'
+		END
+	RETURN @result
+END
+
+GO
+--PROBLEM 6 - EXAMPLE OF CALLING A FUNCTION IN A SELECT (IN THIS CASE THE SELECT IS IN A PROCEDURE, BUT IT IS THE SAME CONCEPT)
+---- SOLUTION 1 WITHOUT SUBQUERY
+CREATE OR ALTER PROCEDURE [usp_EmployeesBySalaryLevel] @salaryLevel VARCHAR(8)
+AS
+BEGIN
+	SELECT [FirstName], [LastName]
+	FROM [Employees]
+	WHERE [dbo].[ufn_GetSalaryLevel] ([Salary]) = @salaryLevel
+END
+
+GO
+---- SOLUTION 2 WITH SUBQUERY
+CREATE OR ALTER PROCEDURE [usp_EmployeesBySalaryLevel] @salaryLevel VARCHAR(8)
+AS
+BEGIN
+	SELECT [FirstName], [LastName]
+	FROM(
+			SELECT [FirstName], [LastName],
+					[dbo].[ufn_GetSalaryLevel] ([Salary]) AS [SalaryLevel]
+			FROM [Employees]
+		) AS [SubqueryRes]
+	WHERE [SalaryLevel] = @salaryLevel	
+END
+
+GO
+--PROBLEM 7 FUNCTION WITH WHILE LOOP EXAMPLE AND HOW TO CALL THE FUNCTION BELOW WIHT "SELECT"
+CREATE OR ALTER FUNCTION [ufn_IsWordComprised] (@setOfLetters VARCHAR(50), @word VARCHAR(50))
+RETURNS BIT
+AS
+BEGIN
+	DECLARE @index INT = 1
+	WHILE @index <= LEN(@word)
+	BEGIN
+		DECLARE @currChar CHAR = SUBSTRING(@word, @index, 1)
+		IF CHARINDEX(@currChar, @setOfLetters) = 0
+		BEGIN
+			RETURN 0
+		END
+		SET @index += 1
+	END
+	RETURN 1
+END
+
+GO
+
+SELECT dbo.[ufn_IsWordComprised]('oistmiahf', 'Sofia')
+
+GO
+--PROBLEM 8
+CREATE OR ALTER PROCEDURE [usp_DeleteEmployeesFromDepartment] @departmentID INT
+AS
+BEGIN
+	--WE NEED TO STORE ALL IDS OF THE EMPLOYEES WHICH ARE TO BE DELETED
+	DECLARE @employeesToDelete TABLE([Id] INT)
+	INSERT INTO @employeesToDelete
+			SELECT [EmployeeID]
+			FROM [Employees]
+			WHERE [DepartmentID] = @departmentID
+
+	--WE NEED TO REMOVE THE EMPLOYEES WHICH ARE WORKING ON SOME PROJECTS FROM THE PROJECTS
+	DELETE FROM [EmployeesProjects]
+	WHERE [EmployeeID] IN (SELECT * FROM @employeesToDelete)
+
+	--SOME OF THE EMPLOYEES TO DELETE COULD BE MANAGERS OF DEPARTMENTS SO WE NEED TO THE MANAGER ID TO NULL FOR
+	--ALL DEPARTMENTS WHICH HAVE A MANAGER WHICH IS TO BE DELETED AND TO DO THAT WE NEED TO ALTER THE ManagerID COLUMN TO BE NULLABLE
+	ALTER TABLE [Departments]
+	ALTER COLUMN [ManagerID] INT
+
+	UPDATE [Departments]
+	SET [ManagerID] = NULL
+	WHERE [ManagerID] IN (SELECT * FROM @employeesToDelete)
+
+	--SOME OF THE EMPLOYEES TO BE DELETED MAY BE MANAGERS OF OTHER EMPLOYEES SO WE NEED TO SET THE ManagerID OF ALL EMPLOYEES
+	--WHICH HAVE A MANAGER THAT IS TO BE DELETED TO NULL
+	UPDATE [Employees]
+	SET [ManagerID] = NULL
+	WHERE [ManagerID] IN (SELECT * FROM @employeesToDelete)
+	
+	--NOW THAT ALL RELATIONS HAVE BEEN TAKEN CARE OF, WE CAN REMOVE THE EMPLOYEES WHICH MEET THE CONDITION
+	DELETE FROM [Employees]
+	WHERE [DepartmentID] = @departmentID
+
+	--LASTLY WE NEED TO DELETE THE DEPARTMENT AS WELL (REQUESTED IN THE PROBLEM DESCRIPTION)
+	DELETE FROM [Departments]
+	WHERE [DepartmentID] = @departmentID
+
+	--AGAIN FROM THE PROBLEM DESCRIPTION GETTING THE COUNT -- THIS WILL DISPLAY HOW MANY PEOPLE HAVE BEEN DELETED
+	SELECT COUNT(*)
+	FROM [Employees]
+	WHERE [DepartmentID] = @departmentID
+END
